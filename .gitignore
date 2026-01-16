@@ -1,0 +1,50 @@
+## C++ #########################################################################
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+# SHIELD 1: Block your specific executable name
+lab-01
+
+# SHIELD 2: Block Mesh files (As requested)
+*.msh
+*.vtk
+*.vtu
+*.geo
+
+# SHIELD 3: Block IDE and OS clutter (Beginners always commit these)
+.vscode/
+.idea/
+.DS_Store
+
+# Build directory
+build/
