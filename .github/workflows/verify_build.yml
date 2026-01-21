@@ -16,6 +16,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Install Boost dependencies
+      run: apt-get update && apt-get install -y libboost-all-dev
+      
     - name: Trust Git Repo
       run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
