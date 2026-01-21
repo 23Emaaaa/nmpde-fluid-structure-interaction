@@ -39,7 +39,6 @@ lab-01
 *.msh
 *.vtk
 *.vtu
-*.geo
 
 # SHIELD 3: Block IDE and OS clutter (Beginners always commit these)
 .vscode/
