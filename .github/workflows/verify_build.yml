@@ -10,12 +10,17 @@ jobs:
   cluster-simulation:
     runs-on: ubuntu-latest
     # FIX: This version exists and works perfectly.
-    container: dealii/dealii:v9.6.0-jammy
+    container: 
+      image: dealii/dealii:v9.6.0-jammy
+      options: --user root
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Install Boost dependencies
+      run: apt-get update && apt-get install -y libboost-all-dev
+      
     - name: Trust Git Repo
       run: git config --global --add safe.directory $GITHUB_WORKSPACE
 
