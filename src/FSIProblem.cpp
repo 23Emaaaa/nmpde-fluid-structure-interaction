@@ -503,7 +503,7 @@ FSIProblem::assemble()
                     }
                 }
             }
-            // Neumann boundary condition on outflow
+            /* Neumann boundary condition on outflow
             for(unsigned int f = 0; f < cell->n_faces(); ++f)
             {
               if(!cell->face(f)->at_boundary())
@@ -520,13 +520,13 @@ FSIProblem::assemble()
                 for(unsigned int i = 0; i < dofs_per_cell; ++i)
                 {
                   cell_rhs(i) +=
-                                -p_out * 
+                                p_out * 
                                 scalar_product(fe_face.normal_vector(q), 
                                 fe_face[velocity].value(i,q)) *
                                 fe_face.JxW(q);
                 }
               }
-            }
+            }*/
           }
 
           // SOLID CELL: Linear elasticity
@@ -595,7 +595,7 @@ FSIProblem::assemble()
 
           for(unsigned int q = 0; q < fe_face_solid.n_quadrature_points; ++q)
           {
-            const Tensor<1, dim> n_solid = fe_face_solid.normal_vector(q);
+            const Tensor<1, dim> n_fluid = fe_face_fluid.normal_vector(q);
 
             for(unsigned int i = 0; i < dofs_solid; ++i)
             {
@@ -604,8 +604,8 @@ FSIProblem::assemble()
               for(unsigned int j = 0; j < dofs_fluid; ++j)
               {
                 const Tensor<1, dim> t_f = 
-                                          -(nu * (fe_face_fluid[velocity].symmetric_gradient(j,q) * n_solid)
-                                          - fe_face_fluid[pressure].value(j,q) * n_solid);
+                                          (nu * (fe_face_fluid[velocity].gradient(j,q) * n_fluid)
+                                          - fe_face_fluid[pressure].value(j,q) * n_fluid);
 
                 local_interface_matrix(i,j) +=
                                               (t_f * phi_d_i) * fe_face_solid.JxW(q);
@@ -674,6 +674,7 @@ FSIProblem::assemble()
                                       system_rhs, 
                                       false);
 
+    boundary_functions.clear();
 
     // Solid displacement BCs                                  
     ComponentMask mask_displacement_elasticity(fe_elasticity->n_components(), false);
