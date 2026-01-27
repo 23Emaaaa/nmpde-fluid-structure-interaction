@@ -83,7 +83,7 @@ public:
     vector_value(const Point<dim> &p, Vector<double> &values) const override
     {
       values[0] = 0.0; // u_x
-      values[1] = (std::sin(numbers::PI * (2*p[0])))*(-3); // u_y
+      values[1] = (std::sin(M_PI * (2.0 *p[0])))*(-3.0); // u_y
 
       values[2] = 0.0;
     }
@@ -92,7 +92,7 @@ public:
     value(const Point<dim> &p, const unsigned int component = 0) const override
     {
       if (component == 1)
-        return std::sin(numbers::PI * (2 * p[0]))*(-3);
+        return std::sin(M_PI * (2.0 * p[0]))*(-3.0);
       else
         return 0.0;
     }
@@ -237,7 +237,7 @@ protected:
   const double nu = 1.0;
 
   // Outlet pressure [Pa].
-  const double p_out = -2;
+  //const double p_out = 0.0;
 
   // Inlet velocity.
   InletVelocity inlet_velocity;
