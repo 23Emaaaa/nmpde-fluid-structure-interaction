@@ -19,42 +19,49 @@ FSIProblem::setup()
               << std::endl;
   }
 
-  pcout << "-----------------------------------------------" << std::endl;
+  std::cout << "-----------------------------------------------" << std::endl;
 
   // Initialize the finite element space.
   {
-    pcout << "Initializing the finite element space" << std::endl;
+    std::cout << "Initializing the finite element space" << std::endl;
 
     // ----------------------------
     // Fluid: Stokes finite element
     // ----------------------------
     const FE_SimplexP<dim> fe_velocity(degree_velocity);
     const FE_SimplexP<dim> fe_pressure(degree_pressure);
+    const FE_SimplexP<dim> fe_displacement(degree_displacement);
 
     // Reference cell required to construct FE_Nothing
-    const auto rc = fe_velocity.reference_cell();
+    const auto rc_d = fe_displacement.reference_cell();
 
     // FE_Nothing is used to deactivate unused components
-    const FE_Nothing<dim> fe_nothing(rc); 
+    const FE_Nothing<dim> fe_nothing_d(rc_d); 
 
     // Stokes FE system:
     // [ u (dim components), p (1), d (dim components inactive) ]
     fe_stokes = std::make_unique<FESystem<dim>>(fe_velocity, dim, 
                                                 fe_pressure, 1,
-                                                fe_nothing, dim);
+                                                fe_nothing_d, dim);
 
     // ------------------------------------
     // Solid: elasticity finite element
     // ------------------------------------
-    const FE_SimplexP<dim> fe_displacement(degree_displacement);
 
+    // Reference cell required to construct FE_Nothing
+    const auto rc_v = fe_velocity.reference_cell();
+    const auto rc_p = fe_pressure.reference_cell();
+
+    // FE_Nothing is used to deactivate unused components
+    const FE_Nothing<dim> fe_nothing_v(rc_v); 
+    const FE_Nothing<dim> fe_nothing_p(rc_p); 
     
     // Elasticity FE system:
     // [ u (dim components inactive), p (1 inactive), d (dim components) ]
-    fe_elasticity = std::make_unique<FESystem<dim>>(fe_nothing, dim,
-                                                    FE_Nothing<dim>(rc), 1,
+    fe_elasticity = std::make_unique<FESystem<dim>>(fe_nothing_v, dim,
+                                                    fe_nothing_p, 1,
                                                     fe_displacement, dim);
-    pcout << "FE created" << std::endl;
+    std::cout << "FE created" << std::endl;
 
     // ---------------------------------
     // hp::FECollection
@@ -64,7 +71,7 @@ FSIProblem::setup()
     fe_collection.push_back(*fe_stokes);
     fe_collection.push_back(*fe_elasticity);
 
-    pcout << "fe_collection size = " << fe_collection.size() << std::endl;
+    std::cout << "fe_collection size = " << fe_collection.size() << std::endl;
 
     // ===========================================================================
     // Mapping and quadrature
@@ -79,30 +86,30 @@ FSIProblem::setup()
     face_quadrature_collection.push_back(QGaussSimplex<dim-1>(degree_displacement + 1));
 
 
-    pcout << "  Velocity degree:           = " << fe_velocity.degree
+    std::cout << "  Velocity degree:           = " << fe_velocity.degree
           << std::endl;
-    pcout << "  Pressure degree:           = " << fe_pressure.degree
+    std::cout << "  Pressure degree:           = " << fe_pressure.degree
           << std::endl;
-    pcout << "  Displacement degree:       = " << fe_displacement.degree
+    std::cout << "  Displacement degree:       = " << fe_displacement.degree
           << std::endl;
    
 
-    pcout << "  FE stokes components = " << fe_stokes->n_components() << std::endl;
-    pcout << "  FE elasticity components = " << fe_elasticity->n_components() << std::endl;
+    std::cout << "  FE stokes components = " << fe_stokes->n_components() << std::endl;
+    std::cout << "  FE elasticity components = " << fe_elasticity->n_components() << std::endl;
   }
 
-  pcout << "-----------------------------------------------" << std::endl;
+  std::cout << "-----------------------------------------------" << std::endl;
 
   // Initialize the DoF handler.
   {
-    pcout << "Initializing the DoF handler" << std::endl;
+    std::cout << "Initializing the DoF handler" << std::endl;
 
-    pcout << "DoF: reinit..." << std::endl;
+    std::cout << "DoF: reinit..." << std::endl;
 
     //Attach DOFHandler to the mesh
     dof_handler.reinit(mesh);
-    pcout << "DoF: set active_fe_index..." << std::endl;
 
+    std::cout << "DoF: set active_fe_index..." << std::endl;
     // Assign the active finite element based on material id
     // Fluid  -> FE index 0 (Stokes)
     // Solid  -> FE index 1 (Elasticity)
@@ -113,141 +120,27 @@ FSIProblem::setup()
       else if (cell->material_id() == MaterialIds::Solid)
         cell->set_active_fe_index(1); // elasticity
     }
-pcout << "DoF: distribute..." << std::endl;
+    std::cout << "DoF: distribute..." << std::endl;
 
     // Distribute DoFs for the hp finite element space
     dof_handler.distribute_dofs(fe_collection);
-pcout << "DoF: done distribute" << std::endl;
-    /*
-    // We want to reorder DoFs so that all velocity DoFs come first, and then
-    // all pressure DoFs.
-    std::vector<unsigned int> block_component(2*dim + 1, 0);
-    for (unsigned int c=0; c<dim; ++c) block_component[c] = 0;     
-    block_component[dim] = 1;                                       
-    for (unsigned int c=dim+1; c<2*dim+1; ++c) block_component[c] = 2;
-    DoFRenumbering::component_wise(dof_handler, block_component);
-    */
+    std::cout << "DoF: done distribute" << std::endl;
 
     // In serial runs, locally owned and relevant DoFs coincide
     locally_owned_dofs = dof_handler.locally_owned_dofs();
     locally_relevant_dofs = DoFTools::extract_locally_relevant_dofs(dof_handler);
 
-    pcout << "Total DoFs = " << dof_handler.n_dofs() << std::endl;
+    std::cout << "Total DoFs = " << dof_handler.n_dofs() << std::endl;
 
-    // Besides the locally owned and locally relevant indices for the whole
-    // system (velocity and pressure), we will also need those for the
-    // individual velocity and pressure blocks.
-    // std::vector<types::global_dof_index> dofs_per_block =
-    //   DoFTools::count_dofs_per_fe_block(dof_handler, block_component);
-/*
-    block_owned_dofs.resize(3);
-    block_relevant_dofs.resize(3);
-
-    for (auto &is : block_owned_dofs)   is.clear();
-    for (auto &is : block_relevant_dofs) is.clear();
-
-    // Stokes
-    ComponentMask mask_u_stokes(2*dim+1, false);
-    for (unsigned int c=0;c<dim;++c) 
-      mask_u_stokes.set(c,true);
-
-    ComponentMask mask_p_stokes(2*dim+1, false);
-    mask_p_stokes.set(dim,true);
-
-    // Elasticity
-    ComponentMask mask_d_solid(2*dim+1, false);
-    for (unsigned int c=dim+1;c<2*dim+1;++c) 
-      mask_d_solid.set(c,true);
-
-    IndexSet u_owned(locally_owned_dofs.size()), p_owned(locally_owned_dofs.size()), d_owned(locally_owned_dofs.size());
-    IndexSet u_rel(locally_relevant_dofs.size()), p_rel(locally_relevant_dofs.size()), d_rel(locally_relevant_dofs.size());
-
-    u_owned = IndexSet(dof_handler.n_dofs());
-    p_owned = IndexSet(dof_handler.n_dofs());
-    d_owned = IndexSet(dof_handler.n_dofs());
-    u_rel   = IndexSet(dof_handler.n_dofs());
-    p_rel   = IndexSet(dof_handler.n_dofs());
-    d_rel   = IndexSet(dof_handler.n_dofs());
-
-    std::vector<types::global_dof_index> local_dof_indices;
-
-    for (const auto &cell : dof_handler.active_cell_iterators())
-    {
-      local_dof_indices.resize(cell->get_fe().dofs_per_cell);
-      cell->get_dof_indices(local_dof_indices);
-
-      const unsigned int fe_index = cell->active_fe_index();
-
-      if (fe_index == 0) // stokes cell
-      {
-        for (unsigned int i = 0; i < local_dof_indices.size(); ++i)
-        {
-          const auto gi = local_dof_indices[i];
-
-          if (!locally_relevant_dofs.is_element(gi))
-            continue;
-
-          const unsigned int comp = cell->get_fe().system_to_component_index(i).first;
-
-          if (comp < dim) u_rel.add_index(gi);
-          else if (comp == dim) p_rel.add_index(gi);
-
-          if (locally_owned_dofs.is_element(gi))
-          {
-            if (comp < dim) u_owned.add_index(gi);
-            else if (comp == dim) p_owned.add_index(gi);
-          }
-        }
-      }
-      else if (fe_index == 1) // solid cell
-      {
-        for (unsigned int i = 0; i < local_dof_indices.size(); ++i)
-        {
-          const auto gi = local_dof_indices[i];
-
-          if (!locally_relevant_dofs.is_element(gi))
-            continue;
-
-          const unsigned int comp = cell->get_fe().system_to_component_index(i).first;
-
-          // here comp in [0..dim-1] corresponds to displacement components
-          if (comp > dim && comp < 2*dim + 1) d_rel.add_index(gi);
-
-          if (locally_owned_dofs.is_element(gi))
-          {
-            if (comp > dim && comp < 2*dim + 1) d_owned.add_index(gi);
-          }
-        }
-      }
-    }
-
-    u_owned.compress(); p_owned.compress(); d_owned.compress();
-    u_rel.compress();   p_rel.compress();   d_rel.compress();
-
-    block_owned_dofs[0] = u_owned;
-    block_owned_dofs[1] = p_owned;
-    block_owned_dofs[2] = d_owned;
-
-    block_relevant_dofs[0] = u_rel;
-    block_relevant_dofs[1] = p_rel;
-    block_relevant_dofs[2] = d_rel;
-
-
-
-
-    pcout << "  Block DoFs: velocity = " << block_owned_dofs[0].n_elements()
-          << " pressure = " << block_owned_dofs[1].n_elements()
-          << " displacement = " << block_owned_dofs[2].n_elements() << std::endl;
-*/
   }
 
-  pcout << "-----------------------------------------------" << std::endl;
+  std::cout << "-----------------------------------------------" << std::endl;
 
   // Initialize the linear system.
   {
-    pcout << "Initializing the linear system" << std::endl;
+    std::cout << "Initializing the linear system" << std::endl;
 
-    pcout << "  Initializing the sparsity pattern" << std::endl;
+    std::cout << "  Initializing the sparsity pattern" << std::endl;
 
 
     // Velocity DoFs interact with other velocity DoFs (the weak formulation has
@@ -288,19 +181,16 @@ pcout << "DoF: done distribute" << std::endl;
       for(unsigned int d = 0; d <= dim; ++d)
     {
       face_coupling[c][d] = DoFTools::always;
-      //face_coupling[d][c] = DoFTools::always;
     }
 
-    // velocity = 0 on the interface with constraints
+    // boundary conditions with constraints
     constraints.clear();
-  
-    //constraints.reinit(dof_handler.n_dofs());
   
     DoFTools::make_hanging_node_constraints(dof_handler, constraints);
   
+    // velocity = 0 on interface
     std::vector<types::global_dof_index> local_face_dof_indices(fe_stokes->n_dofs_per_face());
    
-
     for (const auto &cell : dof_handler.active_cell_iterators())
     {
       if (!cell->is_locally_owned())
@@ -340,7 +230,7 @@ pcout << "DoF: done distribute" << std::endl;
 
         if (face_is_on_interface)
         {
-          // FE INDEX 0 = stokes
+          // FE INDEX 0 = Stokes
           cell->face(face_no)->get_dof_indices(local_face_dof_indices, 0);
 
           for (unsigned int i = 0; i < local_face_dof_indices.size(); ++i)
@@ -356,6 +246,36 @@ pcout << "DoF: done distribute" << std::endl;
       }
 
     }
+
+    // Fluid velocity BCs
+    ComponentMask mask_velocity_stokes(fe_stokes->n_components(), false);
+    for(unsigned int c = 0; c < dim; ++c)
+      mask_velocity_stokes.set(c, true);
+
+    VectorTools::interpolate_boundary_values(
+                                            dof_handler,
+                                            BoundaryIds::Inflow,
+                                            inlet_velocity,
+                                            constraints,
+                                            mask_velocity_stokes
+                                            );
+
+    // Solid displacement BCs                                  
+    ComponentMask mask_displacement_elasticity(fe_elasticity->n_components(), false);
+    for (unsigned int c=dim+1; c<2*dim+1; ++c) 
+      mask_displacement_elasticity.set(c,true);
+
+    Functions::ZeroFunction<dim> zero_function_elasticity(fe_elasticity->n_components());
+
+    VectorTools::interpolate_boundary_values(
+                                            dof_handler,
+                                            BoundaryIds::BottomWall,
+                                            zero_function_elasticity,
+                                            constraints,
+                                            mask_displacement_elasticity
+                                            );
+
+
     constraints.close();
 
     // ===========================================================================
@@ -367,46 +287,14 @@ pcout << "DoF: done distribute" << std::endl;
 
     constraints.condense(dsp);
     sparsity.copy_from(dsp);
-
-    //TrilinosWrappers::BlockSparsityPattern sparsity;
-    //sparsity.reinit(block_owned_dofs,   
-    //                block_owned_dofs,   
-    //                block_relevant_dofs,
-    //                MPI_COMM_WORLD);
-                    
-    //sparsity.compress();
   
-    /*
-    Table<2, DoFTools::Coupling> coupling_pressure(2*dim + 1, 2*dim + 1);
-    
-    // We also build a sparsity pattern for the pressure mass matrix.
-    for (unsigned int c = 0; c < 2*dim + 1; ++c)
-      {
-        for (unsigned int d = 0; d < 2*dim + 1; ++d)
-          {
-            if (c == dim && d == dim) // pressure-pressure term
-              coupling_pressure[c][d] = DoFTools::always;
-            else // other combinations
-              coupling_pressure[c][d] = DoFTools::none;
-          }
-      }
-    
-    sparsity_pressure_mass.reinit(block_owned_dofs,   
-                                  block_owned_dofs,   
-                                  block_relevant_dofs);
 
-    DoFTools::make_sparsity_pattern(dof_handler,
-                                    coupling_pressure,
-                                    sparsity_pressure_mass);
-    sparsity_pressure_mass.compress();
-*/
-    pcout << "  Initializing the matrices" << std::endl;
+    std::cout << "  Initializing the matrix" << std::endl;
     system_matrix.reinit(sparsity);
-    //pressure_mass.reinit(sparsity_pressure_mass);
 
-    pcout << "  Initializing the system right-hand side" << std::endl;
+    std::cout << "  Initializing the system right-hand side" << std::endl;
     system_rhs.reinit(dof_handler.n_dofs());
-    pcout << "  Initializing the solution vector" << std::endl;
+    std::cout << "  Initializing the solution vector" << std::endl;
     solution_owned.reinit(dof_handler.n_dofs());
     solution.reinit(dof_handler.n_dofs());
   }
@@ -415,8 +303,8 @@ pcout << "DoF: done distribute" << std::endl;
 void
 FSIProblem::assemble()
 {
-  pcout << "===============================================" << std::endl;
-  pcout << "Assembling the system" << std::endl;
+  std::cout << "===============================================" << std::endl;
+  std::cout << "Assembling the system" << std::endl;
 
   // hp::FEValues allows handling different finite elements on different cells
   // (fluid vs solid) within the same loop.
@@ -437,7 +325,6 @@ FSIProblem::assemble()
 
   system_matrix = 0.0;
   system_rhs    = 0.0;
-  //pressure_mass = 0.0;
 
   // Component ordering:
   // [0 .. dim-1]     -> fluid velocity
@@ -449,19 +336,15 @@ FSIProblem::assemble()
 
   for (const auto &cell : dof_handler.active_cell_iterators())
     {
-      //if (!cell->is_locally_owned())
-        //continue;
 
       const unsigned int fe_index = cell->active_fe_index();
       const unsigned int dofs_per_cell = cell->get_fe().n_dofs_per_cell();
 
       FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
-      //FullMatrix<double> cell_pressure_mass_matrix(dofs_per_cell, dofs_per_cell);
       Vector<double>     cell_rhs(dofs_per_cell);
 
       cell_matrix               = 0.0;
       cell_rhs                  = 0.0;
-      //cell_pressure_mass_matrix = 0.0;
 
       dof_indices.resize(dofs_per_cell);
 
@@ -494,39 +377,10 @@ FSIProblem::assemble()
                     cell_matrix(i, j) -= fe_values[velocity].divergence(j, q) *
                                         fe_values[pressure].value(i, q) *
                                         fe_values.JxW(q);
-
-                    // Pressure mass matrix.
-                    //cell_pressure_mass_matrix(i, j) +=
-                    //(fe_values[pressure].value(i, q) *
-                    //fe_values[pressure].value(j, q) / nu) * fe_values.JxW(q);
                     
                     }
                 }
             }
-            /* Neumann boundary condition on outflow
-            for(unsigned int f = 0; f < cell->n_faces(); ++f)
-            {
-              if(!cell->face(f)->at_boundary())
-                continue;
-
-              if(cell->face(f)->boundary_id() != BoundaryIds::Outflow)
-                continue;
-
-              hp_fe_face_values.reinit(cell, f);
-              const FEFaceValues<dim> &fe_face = hp_fe_face_values.get_present_fe_values();
-
-              for(unsigned int q = 0; q < fe_face.n_quadrature_points; ++q)
-              {
-                for(unsigned int i = 0; i < dofs_per_cell; ++i)
-                {
-                  cell_rhs(i) +=
-                                p_out * 
-                                scalar_product(fe_face.normal_vector(q), 
-                                fe_face[velocity].value(i,q)) *
-                                fe_face.JxW(q);
-                }
-              }
-            }*/
           }
 
           // SOLID CELL: Linear elasticity
@@ -551,18 +405,13 @@ FSIProblem::assemble()
             }
           }
       
-      //dof_indices.resize(cell->get_fe().n_dofs_per_cell());
       cell->get_dof_indices(dof_indices);
-      //system_matrix.add(dof_indices, cell_matrix);
-      //system_rhs.add(dof_indices, cell_rhs);
+
       constraints.distribute_local_to_global(cell_matrix,
                                        cell_rhs,
                                        dof_indices,
                                        system_matrix,
                                        system_rhs);
-
-      //if(fe_index == 0)
-        //  pressure_mass.add(dof_indices, cell_pressure_mass_matrix);
 
       // FLUID–SOLID INTERFACE COUPLING
       if(fe_index == 1)
@@ -589,9 +438,7 @@ FSIProblem::assemble()
           const unsigned int dofs_fluid = neighbor->get_fe().dofs_per_cell;
 
           FullMatrix<double> local_interface_matrix(dofs_solid, dofs_fluid);
-          FullMatrix<double> local_interface_matrix_T(dofs_fluid, dofs_solid);
           local_interface_matrix = 0.0;
-          local_interface_matrix_T = 0.0;
 
           for(unsigned int q = 0; q < fe_face_solid.n_quadrature_points; ++q)
           {
@@ -610,8 +457,6 @@ FSIProblem::assemble()
                 local_interface_matrix(i,j) +=
                                               (t_f * phi_d_i) * fe_face_solid.JxW(q);
 
-                local_interface_matrix_T(j,i) +=
-                                              (t_f * phi_d_i) * fe_face_solid.JxW(q);
               }
             }
           }
@@ -625,121 +470,35 @@ FSIProblem::assemble()
                                                 dofs_fluid_indices,
                                                 system_matrix);
 
-          //constraints.distribute_local_to_global(local_interface_matrix_T,
-            //                                    dofs_fluid_indices,
-              //                                  dofs_solid_indices,
-                //                                system_matrix);
-
         }
       }
     }
-      
 
-  //system_matrix.compress(VectorOperation::add);
-  //system_rhs.compress(VectorOperation::add);
-  //pressure_mass.compress(VectorOperation::add);
-
-
-  // Dirichlet boundary conditions.
-  {
-    std::map<types::global_dof_index, double>           boundary_values;
-    std::map<types::boundary_id, const Function<dim> *> boundary_functions;
-
-    // Fluid velocity BCs
-    ComponentMask mask_velocity_stokes(fe_stokes->n_components(), false);
-    for(unsigned int c = 0; c < dim; ++c)
-      mask_velocity_stokes.set(c, true);
-
-    boundary_functions[BoundaryIds::Inflow] = &inlet_velocity;
-
-    VectorTools::interpolate_boundary_values(dof_handler,
-                                             boundary_functions,
-                                             boundary_values,
-                                             mask_velocity_stokes);
-
-    //boundary_functions.clear();
-    //Functions::ZeroFunction<dim> zero_function_stokes(fe_stokes->n_components());
-
-    //boundary_functions[BoundaryIds::LeftWallFluid] = &zero_function_stokes;
-    //boundary_functions[BoundaryIds::RightWallFluid] = &zero_function_stokes;
-    //VectorTools::interpolate_boundary_values(dof_handler,
-    //                                        boundary_functions,
-    //                                         boundary_values,
-    //                                         mask_velocity_stokes);
-
-    MatrixTools::apply_boundary_values(
-                                      boundary_values, 
-                                      system_matrix, 
-                                      solution_owned, 
-                                      system_rhs, 
-                                      false);
-
-    boundary_functions.clear();
-
-    // Solid displacement BCs                                  
-    ComponentMask mask_displacement_elasticity(fe_elasticity->n_components(), false);
-    for (unsigned int c=dim+1; c<2*dim+1; ++c) 
-      mask_displacement_elasticity.set(c,true);
-
-    Functions::ZeroFunction<dim> zero_function_elasticity(fe_elasticity->n_components());
-
-    //boundary_functions[BoundaryIds::LeftWallSolid] = &zero_function_elasticity;
-    //boundary_functions[BoundaryIds::RightWallSolid] = &zero_function_elasticity;
-    boundary_functions[BoundaryIds::BottomWall] = &zero_function_elasticity;
-
-    VectorTools::interpolate_boundary_values(dof_handler,
-                                             boundary_functions,
-                                             boundary_values,
-                                             mask_displacement_elasticity);
-
-    MatrixTools::apply_boundary_values(
-                                      boundary_values,
-                                      system_matrix, 
-                                      solution_owned, 
-                                      system_rhs, 
-                                      false);
-  }
 }
 
 void
 FSIProblem::solve()
 {
-  pcout << "===============================================" << std::endl;
-
-  //SolverControl solver_control(9000, 1e-6 * system_rhs.l2_norm());
-
-  //SolverGMRES<Vector<double>> solver(solver_control);
-
-  //PreconditionBlockDiagonal preconditioner;
-  //preconditioner.initialize(system_matrix.block(0, 0),
-  //                          pressure_mass.block(1, 1),
-  //                          system_matrix.block(2,2));
-
-  //PreconditionIdentity preconditioner;
+  std::cout << "===============================================" << std::endl;
   
-
-  pcout << "Solving the linear system" << std::endl;
+  std::cout << "Solving the linear system" << std::endl;
 
   // Serial implementation with direct solver
   SparseDirectUMFPACK direct_solver;
   direct_solver.initialize(system_matrix);
   direct_solver.vmult(solution_owned, system_rhs);
-  //solver.solve(system_matrix, solution_owned, system_rhs, preconditioner);
-  //pcout << "  " << solver_control.last_step() << " GMRES iterations"
-       // << std::endl;
 
   // Distribute constrained degrees of freedom
   constraints.distribute(solution_owned);
 
   // Copy solution to the final solution vector
   solution = solution_owned;
-  //solution.update_ghost_values();
 }
 
 void
 FSIProblem::output()
 {
-  pcout << "===============================================" << std::endl;
+  std::cout << "===============================================" << std::endl;
 
   DataOut<dim> data_out;
 
@@ -770,23 +529,6 @@ FSIProblem::output()
                            solution,
                            names,
                            interpretation);
-/*
-  std::vector<DataComponentInterpretation::DataComponentInterpretation>
-    interpretation(dim,
-                   DataComponentInterpretation::component_is_part_of_vector);
-  interpretation.push_back(DataComponentInterpretation::component_is_scalar);
-  for (unsigned int d = 0; d < dim; ++d)
-  interpretation.push_back(DataComponentInterpretation::component_is_part_of_vector);
-
-  std::vector<std::string> names(dim, "velocity");
-  names.push_back("pressure");
-  for(unsigned d = 0; d < dim; ++d)
-  { 
-    names.push_back("displacement");
-  }
-
-  data_out.add_data_vector(dof_handler, solution, names, interpretation);
-*/
 
   std::vector<unsigned int> partition_int(mesh.n_active_cells());
   GridTools::get_subdomain_association(mesh, partition_int);
@@ -799,6 +541,6 @@ FSIProblem::output()
   std::ofstream out(output_file_name + ".vtu");
   data_out.write_vtu(out);
 
-  pcout << "Output written to " << output_file_name << std::endl;
-  pcout << "===============================================" << std::endl;
+  std::cout << "Output written to " << output_file_name << std::endl;
+  std::cout << "===============================================" << std::endl;
 }

@@ -31,6 +31,7 @@
 #include <deal.II/lac/trilinos_block_sparse_matrix.h>
 #include <deal.II/lac/trilinos_parallel_block_vector.h>
 #include <deal.II/lac/trilinos_precondition.h>
+#include <deal.II/lac/precondition.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 #include <deal.II/lac/block_sparse_matrix.h>
 #include <deal.II/lac/block_vector.h>
@@ -98,104 +99,12 @@ public:
     }
   };
 
-
-  class PreconditionIdentity
-  {
-  public:
-    // Application of the preconditioner: we just copy the input vector (src)
-    // into the output vector (dst).
-    void
-    vmult(Vector<double>       &dst,
-          const Vector<double> &src) const
-    {
-      dst = src;
-    }
-
-  protected:
-  };
-
-  /* Block-diagonal preconditioner.
-  class PreconditionBlockDiagonal
-  {
-  public:
-    // Initialize the preconditioner, given the velocity stiffness matrix, the
-    // pressure mass matrix.
-    void
-    initialize(const TrilinosWrappers::SparseMatrix &velocity_stiffness_,
-               const TrilinosWrappers::SparseMatrix &pressure_mass_,
-               const TrilinosWrappers::SparseMatrix &displacement_stiffness_)
-    {
-      velocity_stiffness = &velocity_stiffness_;
-      pressure_mass      = &pressure_mass_;
-      displacement_stiffness = &displacement_stiffness_;
-
-      preconditioner_velocity.initialize(velocity_stiffness_);
-      preconditioner_pressure.initialize(pressure_mass_);
-      preconditioner_displacement.initialize(displacement_stiffness_);
-    }
-
-    // Application of the preconditioner.
-    void
-    vmult(TrilinosWrappers::MPI::BlockVector       &dst,
-          const TrilinosWrappers::MPI::BlockVector &src) const
-    {
-      SolverControl solver_control_velocity(1000, 1e-2 * src.block(0).l2_norm());
-      SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_velocity(
-        solver_control_velocity);
-      solver_cg_velocity.solve(*velocity_stiffness,
-                               dst.block(0),
-                               src.block(0),
-                               preconditioner_velocity);
-
-      SolverControl                           solver_control_pressure(1000,
-                                            1e-2 * src.block(1).l2_norm());
-      SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_pressure(
-        solver_control_pressure);
-      solver_cg_pressure.solve(*pressure_mass,
-                               dst.block(1),
-                               src.block(1),
-                               preconditioner_pressure);
-
-      SolverControl                           solver_control_displacement(1000,
-                                            1e-2 * src.block(2).l2_norm());
-      SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_displacement(
-        solver_control_displacement);
-      solver_cg_displacement.solve(*displacement_stiffness,
-                               dst.block(2),
-                               src.block(2),
-                               preconditioner_displacement);
-    }
-
-  protected:
-    // Velocity stiffness matrix.
-    const TrilinosWrappers::SparseMatrix *velocity_stiffness;
-
-    // Preconditioner used for the velocity block.
-    TrilinosWrappers::PreconditionILU preconditioner_velocity;
-
-    // Pressure mass matrix.
-    const TrilinosWrappers::SparseMatrix *pressure_mass;
-
-    // Preconditioner used for the pressure block.
-    TrilinosWrappers::PreconditionILU preconditioner_pressure;
-
-    // displacement stiffness matrix.
-    const TrilinosWrappers::SparseMatrix *displacement_stiffness;
-
-    // Preconditioner used for the displacement block.
-    TrilinosWrappers::PreconditionILU preconditioner_displacement;
-
-  };
-*/
   // Constructor.
   FSIProblem(const std::string  &mesh_file_name_,
                     const unsigned int &degree_velocity_,
                     const unsigned int &degree_pressure_,
                     const unsigned int &degree_displacement_)
-    : mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD))
-    , mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD))
-    , pcout(std::cout, mpi_rank == 0)
-    , mesh_file_name(mesh_file_name_)
+    : mesh_file_name(mesh_file_name_)
     , degree_velocity(degree_velocity_)
     , degree_pressure(degree_pressure_)
     , degree_displacement(degree_displacement_)
@@ -220,24 +129,10 @@ public:
 
 protected:
 
-  // MPI parallel. /////////////////////////////////////////////////////////////
-
-  // Number of MPI processes.
-  const unsigned int mpi_size;
-
-  // This MPI process.
-  const unsigned int mpi_rank;
-
-  // Parallel output stream.
-  ConditionalOStream pcout;
-
   // Problem definition. ///////////////////////////////////////////////////////
 
   // Kinematic viscosity [m2/s].
   const double nu = 1.0;
-
-  // Outlet pressure [Pa].
-  //const double p_out = 0.0;
 
   // Inlet velocity.
   InletVelocity inlet_velocity;
@@ -279,7 +174,6 @@ protected:
 
   // Sparsity
   SparsityPattern sparsity;
-  SparsityPattern sparsity_pressure_mass;
 
   // DoF handler.
   DoFHandler<dim> dof_handler;
@@ -287,19 +181,11 @@ protected:
   // DoFs owned by current process.
   IndexSet locally_owned_dofs;
 
-  // DoFs owned by current process in the velocity, pressure and displacement blocks.
-  std::vector<IndexSet> block_owned_dofs;
-
   // DoFs relevant to the current process (including ghost DoFs).
   IndexSet locally_relevant_dofs;
 
-  // DoFs relevant to current process in the velocity, pressure and displacement blocks.
-  std::vector<IndexSet> block_relevant_dofs;
-
   // System matrix.
   SparseMatrix<double> system_matrix;
-
-  //SparseMatrix<double> pressure_mass;
 
   // Right-hand side vector in the linear system.
   Vector<double> system_rhs;
