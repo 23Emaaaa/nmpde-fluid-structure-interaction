@@ -3,26 +3,37 @@
 void FSIProblem::setup() {
     // Create the mesh.
     {
-        std::cout << "Initializing the mesh" << std::endl;
+        pcout << "Initializing the mesh" << std::endl;
+
+        // first read the mesh in serial, then distribute it across MPI
+        // processes.
+        Triangulation<dim> mesh_serial;
 
         // Read the mesh from file.
         GridIn<dim> grid_in;
-        grid_in.attach_triangulation(mesh);
+        grid_in.attach_triangulation(mesh_serial);
 
         std::ifstream mesh_file(mesh_file_name);
         grid_in.read_msh(mesh_file);
 
+        // Only keep the local partition of the mesh in each MPI process
+        GridTools::partition_triangulation(mpi_size, mesh_serial);
+        const auto construction_data = TriangulationDescription::Utilities::
+            create_description_from_triangulation(mesh_serial, MPI_COMM_WORLD);
+        mesh.create_triangulation(construction_data);
+
         // n_global_active_cells() instead of n_active_cells() because the mesh
         // is fully distributed
-        std::cout << "  Number of elements = " << mesh.n_global_active_cells()
-                  << std::endl;
+        pcout << "  Number of elements = " << mesh.n_global_active_cells()
+              << std::endl;
     }
 
-    std::cout << "-----------------------------------------------" << std::endl;
+    pcout << "-----------------------------------------------" << std::endl;
 
     // Initialize the finite element space.
+    // local information => no need to change it for parallelization
     {
-        std::cout << "Initializing the finite element space" << std::endl;
+        pcout << "Initializing the finite element space" << std::endl;
 
         // ----------------------------
         // Fluid: Stokes finite element
@@ -58,7 +69,7 @@ void FSIProblem::setup() {
         // [ u (dim components inactive), p (1 inactive), d (dim components) ]
         fe_elasticity = std::make_unique<FESystem<dim>>(
             fe_nothing_v, dim, fe_nothing_p, 1, fe_displacement, dim);
-        std::cout << "FE created" << std::endl;
+        pcout << "FE created" << std::endl;
 
         // ---------------------------------
         // hp::FECollection
@@ -68,8 +79,7 @@ void FSIProblem::setup() {
         fe_collection.push_back(*fe_stokes);
         fe_collection.push_back(*fe_elasticity);
 
-        std::cout << "fe_collection size = " << fe_collection.size()
-                  << std::endl;
+        pcout << "fe_collection size = " << fe_collection.size() << std::endl;
 
         // ===========================================================================
         // Mapping and quadrature
@@ -87,61 +97,63 @@ void FSIProblem::setup() {
         face_quadrature_collection.push_back(
             QGaussSimplex<dim - 1>(degree_displacement + 1));
 
-        std::cout << "  Velocity degree:           = " << fe_velocity.degree
-                  << std::endl;
-        std::cout << "  Pressure degree:           = " << fe_pressure.degree
-                  << std::endl;
-        std::cout << "  Displacement degree:       = " << fe_displacement.degree
-                  << std::endl;
+        pcout << "  Velocity degree:           = " << fe_velocity.degree
+              << std::endl;
+        pcout << "  Pressure degree:           = " << fe_pressure.degree
+              << std::endl;
+        pcout << "  Displacement degree:       = " << fe_displacement.degree
+              << std::endl;
 
-        std::cout << "  FE stokes components = " << fe_stokes->n_components()
-                  << std::endl;
-        std::cout << "  FE elasticity components = "
-                  << fe_elasticity->n_components() << std::endl;
+        pcout << "  FE stokes components = " << fe_stokes->n_components()
+              << std::endl;
+        pcout << "  FE elasticity components = "
+              << fe_elasticity->n_components() << std::endl;
     }
 
-    std::cout << "-----------------------------------------------" << std::endl;
+    pcout << "-----------------------------------------------" << std::endl;
 
     // Initialize the DoF handler.
     {
-        std::cout << "Initializing the DoF handler" << std::endl;
+        pcout << "Initializing the DoF handler" << std::endl;
 
-        std::cout << "DoF: reinit..." << std::endl;
+        pcout << "DoF: reinit..." << std::endl;
 
         // Attach DOFHandler to the mesh
         dof_handler.reinit(mesh);
 
-        std::cout << "DoF: set active_fe_index..." << std::endl;
+        pcout << "DoF: set active_fe_index..." << std::endl;
         // Assign the active finite element based on material id
         // Fluid  -> FE index 0 (Stokes)
         // Solid  -> FE index 1 (Elasticity)
         for (const auto& cell : dof_handler.active_cell_iterators()) {
-            if (cell->material_id() == MaterialIds::Fluid)
-                cell->set_active_fe_index(0);  // stokes
-            else if (cell->material_id() == MaterialIds::Solid)
-                cell->set_active_fe_index(1);  // elasticity
+            // only on locally owned cells,
+            // ghost cells will be set by the neighboring MPI processes
+            if (cell->is_locally_owned()) {
+                if (cell->material_id() == MaterialIds::Fluid)
+                    cell->set_active_fe_index(0);  // stokes
+                else if (cell->material_id() == MaterialIds::Solid)
+                    cell->set_active_fe_index(1);  // elasticity
+            }
         }
-        std::cout << "DoF: distribute..." << std::endl;
+        pcout << "DoF: distribute..." << std::endl;
 
         // Distribute DoFs for the hp finite element space
         dof_handler.distribute_dofs(fe_collection);
-        std::cout << "DoF: done distribute" << std::endl;
+        pcout << "DoF: done distribute" << std::endl;
 
         // In serial runs, locally owned and relevant DoFs coincide
         locally_owned_dofs = dof_handler.locally_owned_dofs();
         locally_relevant_dofs =
             DoFTools::extract_locally_relevant_dofs(dof_handler);
 
-        std::cout << "Total DoFs = " << dof_handler.n_dofs() << std::endl;
+        pcout << "Total DoFs = " << dof_handler.n_dofs() << std::endl;
     }
 
-    std::cout << "-----------------------------------------------" << std::endl;
+    pcout << "-----------------------------------------------" << std::endl;
 
     // Initialize the linear system.
     {
-        std::cout << "Initializing the linear system" << std::endl;
-
-        std::cout << "  Initializing the sparsity pattern" << std::endl;
+        pcout << "Initializing the linear system" << std::endl;
 
         // Velocity DoFs interact with other velocity DoFs (the weak formulation
         // has terms involving u times v), and pressure DoFs interact with
@@ -183,6 +195,10 @@ void FSIProblem::setup() {
 
         // boundary conditions with constraints
         constraints.clear();
+
+        // CRITICAL : In parallel, constraints must be initialized with the
+        // locally relevant DoFs
+        constraints.reinit(locally_relevant_dofs);
 
         DoFTools::make_hanging_node_constraints(dof_handler, constraints);
 
@@ -261,28 +277,63 @@ void FSIProblem::setup() {
         // ===========================================================================
         // Sparsity pattern and system matrices
         // ===========================================================================
-        DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
+
+        // spostato il print qui (stava sopra)
+        pcout << "  Initializing the sparsity pattern" << std::endl;
+
+        // tells each MPI rank to only create a scratchpad for the rows it
+        // actually touches (its owned cells plus its ghosted neighbors
+        DynamicSparsityPattern dsp(locally_relevant_dofs);
 
         DoFTools::make_flux_sparsity_pattern(dof_handler, dsp, cell_coupling,
                                              face_coupling);
 
+        // Remove constrained entries BEFORE communicating
         constraints.condense(dsp);
-        sparsity.copy_from(dsp);
 
-        std::cout << "  Initializing the matrix" << std::endl;
-        system_matrix.reinit(sparsity);
+        // Distribute the pattern across the MPI network
+        SparsityTools::distribute_sparsity_pattern(
+            dsp, dof_handler.locally_owned_dofs(), MPI_COMM_WORLD,
+            locally_relevant_dofs);
 
-        std::cout << "  Initializing the system right-hand side" << std::endl;
-        system_rhs.reinit(dof_handler.n_dofs());
-        std::cout << "  Initializing the solution vector" << std::endl;
-        solution_owned.reinit(dof_handler.n_dofs());
-        solution.reinit(dof_handler.n_dofs());
+        /*
+        // Create the empty object first, THEN reinit it with the 4 arguments
+        TrilinosWrappers::SparsityPattern sparsity;
+        sparsity.reinit(locally_owned_dofs, locally_owned_dofs, dsp,
+                        MPI_COMM_WORLD);
+
+        //  locks the graph and builds the parallel communication paths
+        // (Though reinit with a DSP usually calls compress internally!)
+        sparsity.compress();
+
+        // not needed in parallel version
+        // sparsity.copy_from(dsp);
+        */
+
+        pcout << "  Initializing the matrix" << std::endl;
+
+        // The matrix handles the Trilinos SparsityPattern internally
+        // (same as the commented code above)
+        system_matrix.reinit(locally_owned_dofs, locally_owned_dofs, dsp,
+                             MPI_COMM_WORLD);
+
+        pcout << "  Initializing the system right-hand side" << std::endl;
+        system_rhs.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        pcout << "  Initializing the solution vector" << std::endl;
+        solution_owned.reinit(locally_owned_dofs, MPI_COMM_WORLD);
+
+        // The final solution vector needs the "ghost" entries(locally_relevant)
+        // so you can output a continuous mesh to ParaView and evaluate
+        // interface gradients
+        solution.reinit(locally_owned_dofs, locally_relevant_dofs,
+                        MPI_COMM_WORLD);
     }
 }
 
 void FSIProblem::assemble() {
-    std::cout << "===============================================" << std::endl;
-    std::cout << "Assembling the system" << std::endl;
+    pcout << "===============================================" << std::endl;
+    pcout << "Assembling the system" << std::endl;
 
     // hp::FEValues allows handling different finite elements on different cells
     // (fluid vs solid) within the same loop.
@@ -310,6 +361,10 @@ void FSIProblem::assemble() {
     FEValuesExtractors::Vector displacement(dim + 1);
 
     for (const auto& cell : dof_handler.active_cell_iterators()) {
+        // only assemble integrals for cells explicitly owned by this processor
+        // ghost cells are skipped
+        if (!cell->is_locally_owned()) continue;
+
         const unsigned int fe_index = cell->active_fe_index();
         const unsigned int dofs_per_cell = cell->get_fe().n_dofs_per_cell();
 
@@ -434,13 +489,18 @@ void FSIProblem::assemble() {
             }
         }
     }
+
+    // it forces the processor to exchange matrix and
+    // vector entries that are assembled but owned by other processors
+    system_matrix.compress(VectorOperation::add);
+    system_rhs.compress(VectorOperation::add);
 }
 
 void FSIProblem::solve() {
-    std::cout << "===============================================" << std::endl;
+    pcout << "===============================================" << std::endl;
 
-    std::cout << "Solving the linear system" << std::endl;
-
+    pcout << "Solving the linear system" << std::endl;
+    /*
     // Serial implementation with direct solver
     SparseDirectUMFPACK direct_solver;
     direct_solver.initialize(system_matrix);
@@ -451,10 +511,27 @@ void FSIProblem::solve() {
 
     // Copy solution to the final solution vector
     solution = solution_owned;
+    */
+
+    SolverControl solver_control;
+    // automatically hooks into parallel direct solvers
+    TrilinosWrappers::SolverDirect direct_solver(solver_control);
+
+    direct_solver.solve(system_matrix, solution_owned, system_rhs);
+
+    // Distribute constrained degrees of freedom
+    constraints.distribute(solution_owned);
+
+    // Copy solution to the final solution vector
+    solution = solution_owned;
 }
 
 void FSIProblem::output() {
-    std::cout << "===============================================" << std::endl;
+    pcout << "===============================================" << std::endl;
+
+    // Parallel VTU(.pvtu): every processor writes its own local chunk of
+    // the mesh to its own isolated file. Then, Rank 0 writes a tiny
+    // "master" file that tells ParaView how to stitch them all together.
 
     DataOut<dim> data_out;
 
@@ -493,9 +570,30 @@ void FSIProblem::output() {
     data_out.build_patches();
 
     const std::string output_file_name = "output-FSIProblem";
+
+    /*
     std::ofstream out(output_file_name + ".vtu");
     data_out.write_vtu(out);
+    */
 
-    std::cout << "Output written to " << output_file_name << std::endl;
-    std::cout << "===============================================" << std::endl;
+    // Each processor writes its own separate file
+    // (e.g., output_0000.vtu, output_0001.vtu)
+    const std::string filename =
+        output_file_name + "_" + Utilities::int_to_string(mpi_rank, 4) + ".vtu";
+    std::ofstream out(filename);
+    data_out.write_vtu(out);
+
+    // Rank 0 creates a master .pvtu record that links all the individual files
+    if (mpi_rank == 0) {
+        std::vector<std::string> filenames;
+        for (unsigned int i = 0; i < mpi_size; ++i) {
+            filenames.push_back(output_file_name + "_" +
+                                Utilities::int_to_string(i, 4) + ".vtu");
+        }
+        std::ofstream master_out(output_file_name + ".pvtu");
+        data_out.write_pvtu_record(master_out, filenames);
+    }
+
+    pcout << "Output written to " << output_file_name << std::endl;
+    pcout << "===============================================" << std::endl;
 }

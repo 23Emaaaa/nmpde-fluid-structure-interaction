@@ -29,6 +29,7 @@
 #include <deal.II/lac/trilinos_block_sparse_matrix.h>
 #include <deal.II/lac/trilinos_parallel_block_vector.h>
 #include <deal.II/lac/trilinos_precondition.h>
+#include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
@@ -94,9 +95,8 @@ class FSIProblem {
           // for parallelization
           mpi_size(Utilities::MPI::n_mpi_processes(MPI_COMM_WORLD)),
           mpi_rank(Utilities::MPI::this_mpi_process(MPI_COMM_WORLD)),
-          mesh(MPI_COMM_WORLD),
-          pcout(std::cout, mpi_rank == 0)  // only rank=0 can write
-    {}
+          pcout(std::cout, mpi_rank == 0),  // only rank=0 can write
+          mesh(MPI_COMM_WORLD) {}
     // Initialization.
     void setup();
 
@@ -138,6 +138,12 @@ class FSIProblem {
     // Polynomial degree used for displacement.
     const unsigned int degree_displacement;
 
+    // the order of declaration of these  4variables is important
+    const unsigned int mpi_size;
+    const unsigned int mpi_rank;
+
+    ConditionalOStream pcout;
+
     // Mesh.
     parallel::fullydistributed::Triangulation<dim> mesh;
 
@@ -173,15 +179,10 @@ class FSIProblem {
     TrilinosWrappers::MPI::Vector system_rhs;
 
     // System solution (without ghost elements).
-    Vector<double> solution_owned;
+    TrilinosWrappers::MPI::Vector solution_owned;
 
     // System solution (including ghost elements).
-    Vector<double> solution;
-
-    const unsigned int mpi_size;
-    const unsigned int mpi_rank;
-
-    ConditionalOStream pcout;
+    TrilinosWrappers::MPI::Vector solution;
 };
 
 #endif
