@@ -32,6 +32,7 @@
 *.exe
 *.out
 *.app
+
 # SHIELD 1: Block your specific executable name
 lab-01
 
@@ -44,6 +45,9 @@ lab-01
 .vscode/
 .idea/
 .DS_Store
+.github/
+.devcontainer/
+.cache/
 
 # Build directory
 build/
