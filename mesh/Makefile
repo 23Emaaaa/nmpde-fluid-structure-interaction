@@ -8,8 +8,10 @@ MESH = mesh_fsi.msh
 GMSH = gmsh
 
 # Mesh options
-# -2  -> genera mesh 2D
-OPTIONS = -2
+# -2        -> generate a 2D mesh
+# -format   -> enforce MSH v2 for deal.II GridIn::read_msh
+# -nopopup  -> avoid interactive GUI mode
+OPTIONS = -2 -format msh2 -nopopup
 
 .PHONY: all clean mesh
 
