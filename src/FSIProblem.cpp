@@ -254,6 +254,7 @@ void FSIProblem::setup()
     mesh_file.clear();
     mesh_file.seekg(0);
     grid_in.read_msh(mesh_file);
+    mesh.refine_global(2);
 
     pcout << "  Number of elements = " << mesh.n_active_cells() << std::endl;
     pcout << "  Number of MPI ranks = " << mpi_size << std::endl;
@@ -469,16 +470,16 @@ void FSIProblem::setup()
                                              inlet_velocity,
                                              constraints,
                                              mask_velocity);
-    VectorTools::interpolate_boundary_values(dof_handler,
-                                             BoundaryIds::LeftWallFluid,
-                                             zero_function,
-                                             constraints,
-                                             mask_velocity);
-    VectorTools::interpolate_boundary_values(dof_handler,
-                                             BoundaryIds::RightWallFluid,
-                                             zero_function,
-                                             constraints,
-                                             mask_velocity);
+    // VectorTools::interpolate_boundary_values(dof_handler,
+    //                                         BoundaryIds::LeftWallFluid,
+    //                                         zero_function,
+    //                                         constraints,
+    //                                         mask_velocity);
+    // VectorTools::interpolate_boundary_values(dof_handler,
+    //                                         BoundaryIds::RightWallFluid,
+    //                                         zero_function,
+    //                                         constraints,
+    //                                         mask_velocity);
     VectorTools::interpolate_boundary_values(dof_handler,
                                              BoundaryIds::BottomWall,
                                              zero_function,
@@ -835,14 +836,14 @@ void FSIProblem::solve()
   TrilinosWrappers::PreconditionAMG::AdditionalData solid_amg_data;
   solid_amg_data.elliptic = true;
   solid_amg_data.higher_order_elements = (degree_displacement > 1);
-  solid_amg_data.smoother_sweeps = 2;
-  solid_amg_data.aggregation_threshold = 1e-2;
+  solid_amg_data.smoother_sweeps = 8;
+  solid_amg_data.aggregation_threshold = 5e-2;
 
   TrilinosWrappers::PreconditionAMG solid_preconditioner;
   solid_preconditioner.initialize(system_matrix.block(2, 2), solid_amg_data);
 
   const double solid_rhs_norm = solid_rhs.l2_norm();
-  SolverControl solid_control(400, std::max(1e-12, 1e-10 * solid_rhs_norm));
+  SolverControl solid_control(400, std::max(1e-12, 1e-8 * solid_rhs_norm));
   SolverCG<MPIVector> solid_solver(solid_control);
   solid_solver.solve(system_matrix.block(2, 2),
                      solution_owned.block(2),
