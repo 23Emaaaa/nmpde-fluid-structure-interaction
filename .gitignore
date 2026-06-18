@@ -32,5 +32,18 @@
 *.exe
 *.out
 *.app
+# SHIELD 1: Block your specific executable name
+lab-01
 
-*/build/*
+# SHIELD 2: Block Mesh files (As requested)
+*.msh
+*.vtk
+*.vtu
+
+# SHIELD 3: Block IDE and OS clutter (Beginners always commit these)
+.vscode/
+.idea/
+.DS_Store
+
+# Build directory
+build/
