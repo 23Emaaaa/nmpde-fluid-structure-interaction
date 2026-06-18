@@ -73,7 +73,3 @@ Physical Curve("RightWallSolid", 19) = {8};
 //+
 Physical Curve("RightWallFluid", 20) = {9};
 //+
-
-
-
-

@@ -15,6 +15,8 @@ Then, from the project root, run the following commands:
 $ cd mesh
 $ make
 ```
+This generates `mesh_fsi.msh` in MSH v2 format (`-format msh2`), which is
+required by deal.II `GridIn::read_msh`.
 
 To build the executable, make sure you have loaded the needed modules with
 ```bash
